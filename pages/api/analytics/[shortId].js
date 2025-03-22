@@ -1,5 +1,6 @@
-import clientPromise from '../../../lib/mongodb';
 
+export const dynamic = 'force-dynamic';
+import clientPromise from '../../../lib/mongodb';
 export default async function handler(req, res) {
   const { shortId } = req.query;
 
