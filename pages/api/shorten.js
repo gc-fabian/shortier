@@ -1,42 +1,53 @@
 import { nanoid } from 'nanoid';
 import clientPromise from '../../lib/mongodb';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from './auth/[...nextauth]';
 
 export default async function handler(req, res) {
-  if (req.method === 'POST') {
-    const { longUrl } = req.body;
-    if (!longUrl) {
-      return res.status(400).json({ message: 'La URL es requerida' });
-    }
-    try {
-      const client = await clientPromise;
-      const db = client.db(); // o especifica el nombre de la base de datos
-      const collection = db.collection('urls');
+  const session = await getServerSession(req, res, authOptions);
+  if (!session) {
+    return res.status(401).json({ message: 'Debes iniciar sesión para acortar URLs' });
+  }
 
-      const shortId = nanoid(6); // genera un ID de 6 caracteres
-      const creationDate = new Date();
-      const expirationDate = new Date();
-      expirationDate.setDate(creationDate.getDate() + 3); // Expira en 3 días
-
-      const newUrl = {
-        longUrl,
-        shortId,
-        creationDate,
-        expirationDate,
-        clicks: 0,
-      };
-
-      await collection.insertOne(newUrl);
-
-      // Construye la URL acortada utilizando el host de la solicitud
-      const shortUrl = `${req.headers.origin}/${shortId}`;
-
-      return res.status(201).json({ shortUrl });
-    } catch (error) {
-      console.error(error);
-      return res.status(500).json({ message: 'Error al acortar la URL' });
-    }
-  } else {
+  if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
-    res.status(405).end(`Método ${req.method} no permitido`);
+    return res.status(405).end(`Método ${req.method} no permitido`);
+  }
+
+  const { longUrl } = req.body;
+  if (!longUrl) {
+    return res.status(400).json({ message: 'La URL es requerida' });
+  }
+
+  try {
+    const client = await clientPromise;
+    const db = client.db();
+    const collection = db.collection('urls');
+
+    const shortId = nanoid(6);
+    const creationDate = new Date();
+    const expirationDate = new Date();
+    expirationDate.setDate(creationDate.getDate() + 3);
+
+    const newUrl = {
+      userId: session.user.id,
+      longUrl,
+      shortId,
+      creationDate,
+      expirationDate,
+      clicks: 0,
+    };
+
+    await collection.insertOne(newUrl);
+
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : req.headers.origin;
+    const shortUrl = `${baseUrl}/${shortId}`;
+
+    return res.status(201).json({ shortUrl });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Error al acortar la URL' });
   }
 }
